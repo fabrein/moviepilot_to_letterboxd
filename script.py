@@ -2,6 +2,7 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
+from datetime import datetime
 
 LOGIN_URL = "https://www.moviepilot.de/login?next="
 SESSION_POST_URL="https://www.moviepilot.de/api/session"
@@ -11,8 +12,8 @@ SEARCH_URI = "https://www.moviepilot.de/users/%s/rated/movies?page=%d"
 def create_csv(user):
     with open(str(user) + '.csv', 'w', encoding='UTF-8') as f:
         writer = csv.writer(f)
-        writer.writerow(('Title','Year','Rating10'))
-
+        #writer.writerow(('Title','Year','Rating','RatingDate'))
+        writer.writerow(('Title','Year','Rating10','WatchedDate'))
 # write to previously created csv file
 def write_to_csv(user, movie):
     with open(str(user) + '.csv', 'a', encoding='UTF-8') as f:
@@ -20,7 +21,8 @@ def write_to_csv(user, movie):
         writer.writerow((
           movie['title'],
           movie['year'],
-          movie['rating']
+          movie['rating'],
+          movie['watchedDate']
         ))
 
 # request movies pages for selected user as long there are movies to export
@@ -34,25 +36,30 @@ def get_movies(request, user):
        soup = BeautifulSoup(search_document._content, 'html.parser')
        scrape_movielist_and_write_to_csv(user, soup)
        no_more_movies_to_export = False
-       if (soup.find_all("li", {"class": "is-movie-wide"}) == []):
+       if (soup.find_all("a", {"class": "pagination--next js--pagination--next"}) == []):
            no_more_movies_to_export = True
        if (no_more_movies_to_export):
+           print("Reached end of list.")
            break
 
 # find movie infos and write them to csv file
 def scrape_movielist_and_write_to_csv(user, soup):
-    movie = {'title': None, 'director': None, 'year': None}
-    movieslist = soup.find_all("li", {"class": "is-movie-wide"})
+    movie = {'title': None, 'director': None, 'year': None, 'rating': None, 'watchedDate': None}
+    movieslist = soup.find_all('tr', class_=['odd', 'even'])
+    
     for movie in movieslist:
-        movie['title'] = movie.find("img").get("alt")
-        date = movie.find_all("span", {"class": "production_info"})
-        for d in date:
-            chunk = d.get_text()
-            date = [int(s) for s in chunk.split() if s.isdigit()]
-            movie['year'] = date[0]
-        for rating in movie.select(".rating-value"):
-            movie['rating'] = rating.get("title")
-        write_to_csv(user, movie)
+       movie['title'] = movie.find("a").text.strip() 
+       date = movie.find_all("span", {"class": "production_info"})
+       for d in date:
+          chunk = d.get_text()
+          date = [int(s) for s in chunk.split() if s.isdigit()]
+          movie['year'] = date[0]
+       #date = movie.find_all("td", {"class": "plain-list-date"})
+       rating_td = soup.find_all('td')[1]
+       movie['rating'] = float(rating_td.text.strip())
+       movie['watchedDate'] = movie.find("td", {"class": "plain-list-date"}).text.strip()
+       movie['watchedDate'] = datetime.strptime(movie['watchedDate'], "%d.%m.%Y").strftime("%Y-%m-%d")
+       write_to_csv(user, movie)
 
 # get moviepilot login
 def get_mp_login():
